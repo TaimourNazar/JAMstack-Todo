@@ -1,0 +1,12 @@
+{
+  "name": "JAMstack_Todo_c39",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "https://github.com/TaimourNazar/JAMstack-Todo.git",
+  "author": "Taimour <taimour.nazar1@gmail.com>",
+  "license": "MIT",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ]
+}
