@@ -1,4 +1,8 @@
 const { ApolloServer, gql } = require("apollo-server-lambda");
+const faunadb = require("faunadb"), q = faunadb.query;
+require('dotenv').config();
+
+var client = new faunadb.Client({ secret: process.env.FAUNA });
 
 const typeDefs = gql`
   type Query {
@@ -15,24 +19,58 @@ const typeDefs = gql`
   }
 `;
 
-const todos = {};
-let todoIndex = 0;
 
 const resolvers = {
   Query: {
-    todos: () => {
-      return Object.values(todos);
+    todos: async (parent, args, { user }) => {
+      if (!user) {
+        return [];
+      } else {
+        const results = await client.query(
+          q.Paginate(q.Match(q.Index("todos_by_user"), user))
+        )
+        return results.data.map(([ref, text, done]) => ({
+          id: ref.id,
+          text,
+          done
+        }));
+      }
     }
   },
   Mutation: {
-    addTodo: (_, {text}) => {
-      todoIndex++;
-      const id = `key-${todoIndex}`;
-      todos[id] = {id, text, done:false};
+    addTodo: async (_, { text }, {user}) => {
+      if(!user){
+        throw new Error("Must be authenticated to insert todos");
+      }
+      const results = await client.query(
+        q.Create(q.Collection("todos"),{
+            data: {
+                text,
+                done: false,
+                owner: user
+            }
+        })
+      );
+      return {
+        ...results.data,
+        id: results.ref.id
+      };
     },
-    updateTodoDone: (_, {id}) => {
-      todos[id].done = true;
-      return todos[id];
+    updateTodoDone: (_, { id }) => {
+      if(!user){
+        throw new Error("Must be authenticated to update todos");
+      }
+      const results= await client.query(
+        q.Update(q.Ref(q.Collection("todos"),id),{
+            data: {
+                done: true
+            }
+        })
+      );
+      return {
+        ...results.data,
+        id: results.ref.id
+      };
     }
   }
 };
@@ -40,11 +78,20 @@ const resolvers = {
 const server = new ApolloServer({
   typeDefs,
   resolvers,
+
+  context: ({ context }) => {
+    if (context.clientContext.user) {
+      return { user: context.clientContext.user.sub };
+    }
+    else {
+      return {};
+    }
+
+  },
+
   playground: true,
   introspection: true
 });
-
-//exports.handler = server.createHandler();
 
 exports.handler = server.createHandler({
   cors: {
